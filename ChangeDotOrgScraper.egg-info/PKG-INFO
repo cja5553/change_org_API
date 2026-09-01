@@ -1,79 +1,80 @@
 Metadata-Version: 2.1
-Name: ChangeDotOrgScraper
-Version: 0.0.9
+Name: changedotorgscraper
+Version: 0.1.5
 Summary: Scrapes online petition data from change.org
 Author: Charles Alba
 Author-email: alba@wustl.edu
 License: MIT
-Keywords: change.org,petitions,web scraping
-Classifier: Development Status :: 1 - Planning
+Keywords: change.org,petitions,web scraping,selenium,beautifulsoup
+Classifier: Development Status :: 3 - Alpha
 Classifier: Intended Audience :: Education
 Classifier: Intended Audience :: Science/Research
 Classifier: Programming Language :: Python :: 3
 Classifier: Operating System :: Unix
 Classifier: Operating System :: MacOS :: MacOS X
 Classifier: Operating System :: Microsoft :: Windows
+Requires-Python: >=3.8
 Description-Content-Type: text/markdown
 License-File: LICENSE
-Requires-Dist: requests
-Requires-Dist: bs4
-Requires-Dist: tqdm
-Requires-Dist: pandas
-Requires-Dist: beautifulsoup4
 
-`ChangeDotOrgScraper` is an Python package that allows you to scrape online petition data from [change.org](https://www.change.org/).
-
-[![pypi package](https://img.shields.io/badge/pypi_package-v0.0.9-brightgreen)](https://pypi.org/project/ChangeDotOrgScraper/) [![GitHub Source Code](https://img.shields.io/badge/github_source_code-source_code?logo=github&color=green)](https://github.com/cja5553/change_org_scraper) 
-
-
-
-## Installation
-To install in python, simply do the following: 
-```bash
-pip install ChangeDotOrgScraper
-```
-
-## Quick Start
-Here we provide a quick example on how you can use `ChangeDotOrgScraper` to scrape petition data right from [change.org](https://www.change.org/). 
-
-```python
-from ChangeDotOrgScraper import scrape_petitions
-
-# Specify the url of your scrape.org searches
-## for instance, we shall scrape petitions from the search "supplemental nutrition assistance program"
-url='https://www.change.org/search?q=Supplemental%20Nutrition%20Assistance%20Program&offset=0'
-
-# scrape the petition data from change.org
-SNAP_petitions_df=scrape_petitions(url)
-print(SNAP_petitions_df)
-```
-It returns a dataframe with all the petitions data, which contains details such as the petition(s) title, description, date created, target audience signature count, location created, victory status, etc. 
-
-
-
-## Requirements
-### Required packages
-To use `ChangeDotOrgScraper`, you are required to have the following packages installed:  
-- `requests`
-- `beautifulsoup4`    
-- `tqdm`    
-- `pandas`  
-- `ast` (Python standard library)   
-- `re` (Python standard library)   
-- `json`  (Python standard library)  
-
-If you do not have these packages installed in python, you can do the following:
-```bash
-pip install requests beautifulsoup4 tqdm pandas
-```
-
-
-## Citation
-This package was made as part of a larger study on food stamps (i.e., SNAP), therefore, we do not have the paper ready just yet. 
-
-However, if you wish to cite, you may cite:
-
-C Alba (2024) `ChangeDotOrgScraper`: A python package to scrape petition data from change.org. PyPi. 
-
-## Questions?
-Contact me at [alba@wustl.edu](mailto:alba@wustl.edu)
+`changedotorgscraper` is an Python package that allows you to scrape online petition data from [change.org](https://www.change.org/).
+
+[![pypi package](https://img.shields.io/badge/pypi_package-v0.1.5-brightgreen)](https://pypi.org/project/changedotorgscraper/) [![GitHub Source Code](https://img.shields.io/badge/github_source_code-source_code?logo=github&color=green)](https://github.com/cja5553/change_org_scraper) 
+
+
+
+## Installation
+To install in python, simply do the following: 
+```bash
+pip install changedotorgscraper 
+```
+
+## Quick Start
+Here we provide a quick example on how you can use `changedotorgscraper` to scrape petition data right from [change.org](https://www.change.org/). 
+
+```python
+from changedotorgscraper import scrape_petitions
+
+# Specify the url of your scrape.org searches
+## for instance, we shall scrape petitions from the search "supplemental nutrition assistance program"
+url='https://www.change.org/search?q=Supplemental%20Nutrition%20Assistance%20Program&offset=0'
+
+# scrape the petition data from change.org
+SNAP_petitions_df=scrape_petitions(url)
+print(SNAP_petitions_df)
+```
+It returns a dataframe with all the petitions data, which contains details such as the petition(s) title, description, date created, target audience signature count, location created, victory status, etc. 
+
+
+
+## Requirements
+### Required packages
+To use `changedotorgscraper`, you are required to have the following packages installed:  
+- `requests`
+- `beautifulsoup4`    
+- `tqdm`
+- `lxml`  
+- `selenium`  
+- `webdriver-manager`      
+- `pandas`  
+- `ast` (Python standard library)   
+- `re` (Python standard library)   
+- `json`  (Python standard library)  
+- `time` (Python standard library)  
+
+
+If you do not have these packages installed in python, you can do the following:
+```bash
+pip install requests beautifulsoup4 lxml tqdm pandas selenium webdriver-manager
+```
+
+
+## Citation
+This package was made as part of a larger study on policy-related opinion mining.  
+
+If you wish to cite, you may cite:
+
+Alba, C., Warner, B. C., Saxena, A., Huang, J., & An, R. (2025, July). Towards robust sentiment analysis of temporally-sensitive policy-related online text. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 4: Student Research Workshop) (pp. 958-976). doi: 10.18653/v1/2025.acl-srw.70   
+
+## Questions?
+Contact me at [alba@wustl.edu](mailto:alba@wustl.edu)

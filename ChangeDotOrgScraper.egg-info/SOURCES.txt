@@ -1,9 +1,9 @@
 LICENSE
 setup.py
-ChangeDotOrgScraper/ChangeDotOrgScraper.py
-ChangeDotOrgScraper/__init__.py
-ChangeDotOrgScraper.egg-info/PKG-INFO
-ChangeDotOrgScraper.egg-info/SOURCES.txt
-ChangeDotOrgScraper.egg-info/dependency_links.txt
-ChangeDotOrgScraper.egg-info/requires.txt
-ChangeDotOrgScraper.egg-info/top_level.txt
+changedotorgscraper/__init__.py
+changedotorgscraper/changedotorgscraper.py
+changedotorgscraper.egg-info/PKG-INFO
+changedotorgscraper.egg-info/SOURCES.txt
+changedotorgscraper.egg-info/dependency_links.txt
+changedotorgscraper.egg-info/requires.txt
+changedotorgscraper.egg-info/top_level.txt

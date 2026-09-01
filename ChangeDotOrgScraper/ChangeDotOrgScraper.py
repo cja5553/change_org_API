@@ -4,182 +4,420 @@ import json
 from tqdm import tqdm
 import re
 import pandas as pd
-import ast
+import time
+import requests
+from bs4 import BeautifulSoup
+import json
+import re
 
 
-def get_soup(url):
-    '''
-    Gets BeautifulSoup object from the url provided by the user. 
-    
-    Paramters:
-    - url (str): url link provided by the user
+def normalize_url(url):
+    """
+    Normalizes the search URL to ensure proper format for pagination.
+
+    Parameters:
+    - url (str): Original search URL
 
     Returns:
-    - soup (BeautifulSoup obj): A beautiful object of the url provided by the user. 
-    '''
-    if url.endswith("&offset=0"):
-        url=url[:url.find("offset=")]
-        url=url+"offset="
-    elif url.endswith("&offset="):
-        url=url
+    - str: Base URL ready for pagination
+    """
+    # Remove any existing page parameter
+    url = re.sub(r'[&?]page=\d+', '', url)
+
+    # Ensure offset parameter exists
+    if 'offset=' not in url:
+        if '?' in url:
+            url = url + '&offset=0'
+        else:
+            url = url + '?offset=0'
     else:
-        url=url+"&offset="
-        
-    # Send a GET request to the URL
-    response = requests.get(url+"0")
+        # Reset offset to 0
+        url = re.sub(r'offset=\d+', 'offset=0', url)
+
+    return url
+
+
+def build_page_url(base_url, page_num):
+    """
+    Builds the URL for a specific page number.
+
+    Parameters:
+    - base_url (str): Base search URL with offset=0
+    - page_num (int): Page number (1-indexed)
+
+    Returns:
+    - str: URL for the specified page
+    """
+    # Calculate offset (10 results per page)
+    offset = (page_num - 1) * 10
+
+    # Replace offset value
+    page_url = re.sub(r'offset=\d+', f'offset={offset}', base_url)
+
+    # Add page parameter
+    if '&page=' not in page_url and '?page=' not in page_url:
+        page_url = page_url + f'&page={page_num}'
+    else:
+        page_url = re.sub(r'page=\d+', f'page={page_num}', page_url)
+
+    return page_url
+
+
+def extract_petition_from_card(card_element):
+    """
+    Extracts petition data from a petition card element.
+
+    Parameters:
+    - card_element: BeautifulSoup element representing a petition card
+
+    Returns:
+    - dict: Petition data
+    """
     try:
-        # Parse the HTML content of the page with Beautiful Soup
-        soup = BeautifulSoup(response.text, 'html.parser')
-    except:
-         print("Please check the URL or change.org may have been updated such that this package is no long compatable") 
-    return(soup)
+        # Get the petition URL
+        href = card_element.get('href', '')
+        slug = href.replace('/p/', '') if href else ''
 
-def get_pages_no(soup):
-    '''
-    Determines the number of pages of worth of petitions within the change.org search. 
+        # Skip if not a petition link
+        if not href or '/p/' not in href:
+            return None
+
+        # Try to find title - look in parent elements
+        title = ''
+
+        # Method 1: Look within the card for text content
+        title_candidates = card_element.find_all(['h2', 'h3', 'h4', 'span', 'div'])
+        for candidate in title_candidates:
+            text = candidate.get_text(strip=True)
+            if len(text) > 20 and len(text) < 500:
+                title = text
+                break
+
+        # Method 2: Get text from link itself
+        if not title:
+            title = card_element.get_text(strip=True)
+
+        # Method 3: Look at parent container
+        if not title or len(title) < 10:
+            parent = card_element.find_parent(['div', 'article', 'li'])
+            if parent:
+                # Find heading elements in parent
+                heading = parent.find(['h2', 'h3', 'h4'])
+                if heading:
+                    title = heading.get_text(strip=True)
+
+        # Skip if no valid title found
+        if not title or len(title) < 5:
+            return None
+
+        # Look for signature count in parent container
+        signatures = 0
+        parent = card_element.find_parent(['div', 'article', 'li'])
+        if parent:
+            card_text = parent.get_text()
+            sig_patterns = [
+                r'([\d,]+)\s*(?:signatures?|supporters?|signed)',
+                r'([\d,]+)\s*have signed',
+                r'signed:\s*([\d,]+)'
+            ]
+
+            for pattern in sig_patterns:
+                match = re.search(pattern, card_text, re.IGNORECASE)
+                if match:
+                    signatures = int(match.group(1).replace(',', ''))
+                    break
+
+        # Look for creator name
+        creator = ''
+        if parent:
+            creator_patterns = [r'by\s+([A-Za-z\s\.]+)', r'started by\s+([A-Za-z\s\.]+)']
+            card_text = parent.get_text()
+            for pattern in creator_patterns:
+                match = re.search(pattern, card_text, re.IGNORECASE)
+                if match:
+                    creator = match.group(1).strip()[:50]  # Limit length
+                    break
+
+        # Check for victory status
+        victory = False
+        if parent:
+            victory = 'victory' in parent.get_text().lower()
+
+        return {
+            'Petition title': title[:500],  # Limit title length
+            'Description': '',
+            'signature count': signatures,
+            'creator': creator,
+            'date created': '',
+            'location created': '',
+            'Victory verification status': victory,
+            'slug': slug,
+            'url': f'https://www.change.org{href}' if href.startswith('/') else href
+        }
+
+    except Exception:
+        return None
+
+
+def scrape_with_selenium(url, max_pages=None):
+    """
+    Scrapes Change.org search results using Selenium with proper pagination.
 
     Parameters:
-    - soup (BeautifulSoup obj): A beautiful object of the existing page of in the change.org petition of interests
+    - url (str): Search URL from change.org
+    - max_pages (int): Maximum number of pages to scrape (None = all pages)
 
     Returns:
-    - offset_nos (list): list of page numbers. 
-    '''
-    match = re.search(r'<div class="corgi-1weo53w">([\d,]+) results</div>', str(soup))
+    - list[dict]: List of petitions
+    """
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.chrome.service import Service
+        from webdriver_manager.chrome import ChromeDriverManager
+    except ImportError:
+        print("Selenium not installed. Install with: pip install selenium webdriver-manager")
+        return []
 
-    if match:
-        # Extract the matched group which contains the number of results
-        num_results = match.group(1)
-        # Optional: convert the string number to an integer, removing commas
-        num_results_int = int(num_results.replace(',', ''))
-        #print(num_results)  # This will print the string 
-        #print(num_results_int)  # This will print the integer 
-    else:
-        print("No match found")
-    offset=(num_results_int//10)*10
-    offset_nos=[i for i in range(0,offset+10,10)]
-    return(offset_nos)
+    # Normalize the URL
+    base_url = normalize_url(url)
+    print(f"Base URL: {base_url}")
 
-def get_current_page(soup):
-    '''
-    Extracts all the petition and the corresponding creator information from the beautiful soup object. 
+    # Setup Chrome options
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+
+    # Initialize driver
+    try:
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+    except Exception as e:
+        print(f"Error initializing Chrome driver: {e}")
+        return []
+
+    all_petitions = []
+    seen_slugs = set()  # Track seen petitions to avoid duplicates
+    page_num = 1
+    consecutive_empty_pages = 0
+    max_empty_pages = 3  # Stop after 3 consecutive empty pages
+
+    try:
+        # Create progress bar (will update dynamically)
+        pbar = tqdm(desc="Scraping pages", unit="page")
+
+        while True:
+            # Check max_pages limit
+            if max_pages and page_num > max_pages:
+                print(f"\nReached max_pages limit ({max_pages})")
+                break
+
+            # Build URL for current page
+            page_url = build_page_url(base_url, page_num)
+            pbar.set_description(f"Scraping page {page_num}")
+
+            # Navigate to page
+            driver.get(page_url)
+
+            # Wait for page to load
+            try:
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'a[href*="/p/"]'))
+                )
+                time.sleep(2)  # Additional wait for dynamic content
+            except:
+                # No petition links found - might be end of results
+                consecutive_empty_pages += 1
+                if consecutive_empty_pages >= max_empty_pages:
+                    print(f"\nNo more results found after page {page_num - max_empty_pages}")
+                    break
+                page_num += 1
+                pbar.update(1)
+                continue
+
+            # Parse page content
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+
+            # Find all petition links
+            petition_links = soup.find_all('a', href=re.compile(r'^/p/[^/]+/?$'))
+
+            # Extract petitions from this page
+            page_petitions = []
+            for link in petition_links:
+                petition_data = extract_petition_from_card(link)
+                if petition_data:
+                    slug = petition_data.get('slug', '')
+                    # Only add if not seen before
+                    if slug and slug not in seen_slugs:
+                        seen_slugs.add(slug)
+                        page_petitions.append(petition_data)
+
+            # Check if we got any new petitions
+            if not page_petitions:
+                consecutive_empty_pages += 1
+                if consecutive_empty_pages >= max_empty_pages:
+                    print(f"\nNo new results found after page {page_num - max_empty_pages + 1}")
+                    break
+            else:
+                consecutive_empty_pages = 0
+                all_petitions.extend(page_petitions)
+                pbar.set_postfix({'total_petitions': len(all_petitions)})
+
+            # Check for "no results" message
+            page_text = soup.get_text().lower()
+            if 'no results' in page_text or 'no petitions found' in page_text:
+                print(f"\n'No results' message found on page {page_num}")
+                break
+
+            # Move to next page
+            page_num += 1
+            pbar.update(1)
+
+            # Small delay to be respectful to the server
+            time.sleep(1)
+
+        pbar.close()
+
+    except KeyboardInterrupt:
+        print("\nScraping interrupted by user")
+
+    except Exception as e:
+        print(f"\nError during scraping: {e}")
+
+    finally:
+        driver.quit()
+
+    print(f"\n{'='*50}")
+    print(f"Total pages taken: {page_num - 1}")
+    print(f"Total unique petitions found: {len(all_petitions)}")
+    print(f"{'='*50}")
+    print("Proceeding to extract info from each petition")
+
+    return all_petitions
+
+
+def get_petitions(url, max_pages=None):
+    """
+    Main function to scrape Change.org petitions (Selenium only).
 
     Parameters:
-    - soup (BeautifulSoup obj): A beautiful object of the existing page of in the change.org petition of interests
+    - url (str): Change.org search URL
+    - max_pages (int): Maximum pages to scrape (None = all pages)
 
     Returns:
-    - petition_info (list): a list of dictionaries containing all the information of the petitions within the existing change.org page.
-    - creator_info (list): a list of dictionaries containing all the information of the corrresponding creators among the petitions within the existing change.org page. 
-    '''
-    filter_soup=soup.find('script', text=lambda t: '__HYDRATION_DATA__' in t)
-    filter_soup=str(filter_soup)
-    start_str_pos=filter_soup.find("\"prefetchedData\":{\"")
-    end_str_pos=soup.find("}}}}")
-    info=filter_soup[start_str_pos:end_str_pos]
-    info=info.replace('</script>', '')
-    info=info.replace('<script>', '')
-    info=info.replace('__HYDRATION_DATA__=',"")
-    
-    pattern = r'\{"petition":\{"__typename":"Petition".*?"highlight"'
+    - list[dict]: List of petitions
+    """
+    # print("Scraping method: selenium")
+    print(f"Max pages: {'unlimited' if max_pages is None else max_pages}")
+    print()
+    return scrape_with_selenium(url, max_pages=max_pages)
 
-    # Find all instances in the text
-    matches = re.findall(pattern, info, re.DOTALL)
 
-    # Print matches
-    lists_of_petitions=[]
-    for match in (matches):
-        lists_of_petitions.append(match)
-    petition_info,creator_info=[],[]
-    petition_info_pattern = r'\{"petition":\{"__typename":"Petition".*?\}\}'
-    creator_info_pattern = r'"slug".*?"highlight"'
-    
-    for i in lists_of_petitions:
-        petition_info.append(re.findall(petition_info_pattern, i, re.DOTALL))
-        creator_info.append(re.findall(creator_info_pattern, i, re.DOTALL))
-    petition_info=[item for sublist in petition_info for item in sublist]
-    creator_info=[item for sublist in creator_info for item in sublist]
-    
-    for i in (range(len(lists_of_petitions))):
-        petition_info[i]=petition_info[i].replace('false', 'False').replace('true', 'True').replace('null', 'None')
-        petition_info[i]=ast.literal_eval(petition_info[i]+"}}")
-        creator_info[i]=creator_info[i].replace(",\"highlight\"","")
-        creator_info[i]="{"+creator_info[i]
-#         print(creator_info[i])
-        creator_info[i]= ast.literal_eval(creator_info[i].replace('false', 'False').replace('true', 'True').replace('null', 'None'))
-    return(petition_info,creator_info)
 
-def clean_info(petition_info, creator_info):
-    '''
-    Organizes and parses all each petition and creator information
 
-    Parameters:
-    - petition_info (list): a list of dictionaries of petitions with informations of all the petitions within a change.org page. 
-    Each dictionary contains information for each petition, which was extracted from `get_current_page` function.
-    - creator_info (list): a list of dictionaries with creator information from the corresponding petition in petition_info. 
-    Each dictionary contains information for each creator of each corresponding petition, which was extracted from `get_current_page` function.
+def scrape_change_org(url: str) -> dict:
+    soup = BeautifulSoup(requests.get(url).text, "lxml")
+    XXX = soup.prettify()
 
-    Returns
-    list_of_petitions (list): a list of dictionaries, with each dictionary containing information about the petition and creator from the list of petitions within one webpage. 
-    These includes petition title, Description, signature count, creator name, date created, location createdd, and victory status. 
-    '''
-    list_of_petitions=[]
-    for i,j in zip(petition_info,creator_info):
-        petition_title=i["petition"]["ask"]
-        petition_description=i["petition"]["description"]
-        # petition_target=i["petition"]["targetingDescription"]
-        petition_signatures=i["petition"]["signatureState"]["signatureCount"]["displayed"]
-        petition_creator=j["user"]["displayName"]
-        date_created=j['createdAt']
-        location=j["user"]["formattedLocationString"]
-        victory_verification_status=j['isVerifiedVictory']
-        curr={"Petition title":petition_title,
-             "Description":petition_description,
-            #  "target":petition_target,
-             "signature count":petition_signatures,
-             "creator":petition_creator,
-             "date created":date_created,
-              "location created":location,
-             "Victory verification status":victory_verification_status}
-        list_of_petitions.append(curr)
-    return(list_of_petitions)
+    # brief description (meta description)
+    tag = soup.find("meta", attrs={"name": "description"})
+    brief_description = tag.get("content") if tag else None
 
-def scrape_petitions(url):
-    '''
-    Scrapes all the petition and its corresponding details based on the url provided. 
-    This encompasses going looping through all the pages automatically to extract ALL the petitions, not just the petitions listed within the page itself. 
+    # 1) signatureCount dict (FIRST instance)
+    needle = 'signatureCount":'
+    i = XXX.find(needle)
+    signatureCount = None
+    if i != -1:
+        start = XXX.find("{", i)
+        end = XXX.find("}", start) + 1
+        signatureCount = json.loads(XXX[start:end])
 
-    Parameters:
-    - url (str): url from change.org upon searching for the list of petitions
-    
-    Returns:
-    - data_of_petitions (pandas dataframe): dataset of petitions with all the relevant information, including 
-    petition title, Description, target audience, signature count, creator name, date created, location createdd, and victory status. 
-    '''
-    soup=get_soup(url)
-    # gets the list of page numbers. 
-    pages=get_pages_no(soup)
-    list_of_petitions=[]
-    if url.endswith("&offset=0"):
-        url=url[:url.find("offset=")]
-        url=url+"offset="
-    elif url.endswith("&offset="):
-        url=url
-    else:
-        url=url+"&offset="
-    # this for loop runs through all the pages and extracts the petitions.
-    for (i) in tqdm(pages):
-        #print(f"obtaining page {i} of {pages[-1]} pages")
-        i=str(i)
-        response = requests.get(url+i)
+    # 2) petition owner displayName
+    m = re.search(r'"petition":\{"id":"\d+","user":\{"id":"\d+","displayName":"([^"]+)"', XXX)
+    author_display_name = m.group(1) if m else None
+
+    # 3) Petition created on DATE
+    m = re.search(r"Petition created on\s*([^<]+)", XXX)
+    created_on = m.group(1).strip() if m else None
+
+    # 4) ALL decision maker displayNames
+    decision_makers = re.findall(
+        r'"decisionMakers":\[\{"id":"\d+","slug":"[^"]+","displayName":"([^"]+)"',
+        XXX
+    )
+    decision_makers = list(dict.fromkeys(decision_makers))  # dedupe keep order
+
+    return {
+        "url": url,
+        "brief_description": brief_description,
+        "signatureCount": signatureCount,
+        "author_display_name": author_display_name,
+        "created_on": created_on,
+        "decision_makers": decision_makers,
+    }
+
+
+
+
+def get_all_info(list_of_petitions, sleep_sec=0.5):
+    list_of_info = []
+
+    for p in tqdm(list_of_petitions, desc="Fetching petition pages"):
+        pet_url = p.get("url")
+        if not pet_url:
+            continue
+
         try:
-            # Parse the HTML content of the page with Beautiful Soup
-            soup = BeautifulSoup(response.text, 'html.parser')
-        except:
-             print("Please check the URL or change.org may have been updated such that this package is no long compatable")
-        petition_info,creator_info=get_current_page(soup)
-        list_of_petitions+=clean_info(petition_info, creator_info)
-    data_of_petitions=pd.DataFrame(list_of_petitions)
-    return(data_of_petitions)
+            info = scrape_change_org(pet_url)   # <-- your function
+            list_of_info.append(info)
+            time.sleep(sleep_sec)  # be polite / avoid getting blocked
+            
+        except Exception as e:
+            list_of_info.append({
+                "url": pet_url,
+                "signatureCount": None,
+                "author_display_name": None,
+                "created_on": None,
+                "error": str(e)
+            })
+
+    return list_of_info
+
+
+
+
+def scrape_petitions(url,max_pages=None):
+    if max_pages==None:
+        print("No max pages specified, defaulting to 10 pages")
+        max_pages=10
+    else:
+        pass
+    list_of_petitions = get_petitions(url, max_pages=max_pages)
+    list_of_info = get_all_info(list_of_petitions)
     
-# example use case
-# url = "https://www.change.org/search?q=Supplemental%20Nutrition%20Assistance%20Program&offset=0"
-# SNAP_petitions=scrape_petitions(url)
+    # build table
+    rows = []
+    for p, info in zip(list_of_petitions, list_of_info):
+        rows.append({
+            "petition_title": p.get("Petition title"),
+            "url": p.get("url"),
+            **info
+        })
+    
+    df = pd.DataFrame(rows)
+    
+    # optional: drop duplicate url column coming from info dict
+    df = df.drop(columns=["url"], errors="ignore").assign(url=[p.get("url") for p in list_of_petitions])
+    
+    return(df)
+
+

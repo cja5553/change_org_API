@@ -1,1 +1,1 @@
-from .ChangeDotOrgScraper import scrape_petitions
+from .changedotorgscraper import scrape_petitions

@@ -1,5 +1,7 @@
 requests
-bs4
+beautifulsoup4
+lxml
 tqdm
 pandas
-beautifulsoup4
+selenium
+webdriver-manager

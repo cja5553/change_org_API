@@ -1,20 +1,20 @@
-`ChangeDotOrgScraper` is an Python package that allows you to scrape online petition data from [change.org](https://www.change.org/).
+`changedotorgscraper` is an Python package that allows you to scrape online petition data from [change.org](https://www.change.org/).
 
-[![pypi package](https://img.shields.io/badge/pypi_package-v0.0.9-brightgreen)](https://pypi.org/project/ChangeDotOrgScraper/) [![GitHub Source Code](https://img.shields.io/badge/github_source_code-source_code?logo=github&color=green)](https://github.com/cja5553/change_org_scraper) 
+[![pypi package](https://img.shields.io/badge/pypi_package-v0.1.5-brightgreen)](https://pypi.org/project/changedotorgscraper/) [![GitHub Source Code](https://img.shields.io/badge/github_source_code-source_code?logo=github&color=green)](https://github.com/cja5553/change_org_scraper) 
 
 
 
 ## Installation
 To install in python, simply do the following: 
 ```bash
-pip install ChangeDotOrgScraper
+pip install changedotorgscraper 
 ```
 
 ## Quick Start
-Here we provide a quick example on how you can use `ChangeDotOrgScraper` to scrape petition data right from [change.org](https://www.change.org/). 
+Here we provide a quick example on how you can use `changedotorgscraper` to scrape petition data right from [change.org](https://www.change.org/). 
 
 ```python
-from ChangeDotOrgScraper import scrape_petitions
+from changedotorgscraper import scrape_petitions
 
 # Specify the url of your scrape.org searches
 ## for instance, we shall scrape petitions from the search "supplemental nutrition assistance program"
@@ -30,27 +30,32 @@ It returns a dataframe with all the petitions data, which contains details such 
 
 ## Requirements
 ### Required packages
-To use `ChangeDotOrgScraper`, you are required to have the following packages installed:  
+To use `changedotorgscraper`, you are required to have the following packages installed:  
 - `requests`
 - `beautifulsoup4`    
-- `tqdm`    
+- `tqdm`
+- `lxml`  
+- `selenium`  
+- `webdriver-manager`      
 - `pandas`  
 - `ast` (Python standard library)   
 - `re` (Python standard library)   
 - `json`  (Python standard library)  
+- `time` (Python standard library)  
+
 
 If you do not have these packages installed in python, you can do the following:
 ```bash
-pip install requests beautifulsoup4 tqdm pandas
+pip install requests beautifulsoup4 lxml tqdm pandas selenium webdriver-manager
 ```
 
 
 ## Citation
-This package was made as part of a larger study on food stamps (i.e., SNAP), therefore, we do not have the paper ready just yet. 
+This package was made as part of a larger study on policy-related opinion mining.  
 
-However, if you wish to cite, you may cite:
+If you wish to cite, you may cite:
 
-C Alba (2024) `ChangeDotOrgScraper`: A python package to scrape petition data from change.org. PyPi. 
+Alba, C., Warner, B. C., Saxena, A., Huang, J., & An, R. (2025, July). Towards robust sentiment analysis of temporally-sensitive policy-related online text. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 4: Student Research Workshop) (pp. 958-976). doi: 10.18653/v1/2025.acl-srw.70   
 
 ## Questions?
 Contact me at [alba@wustl.edu](mailto:alba@wustl.edu)
